@@ -1,44 +1,50 @@
 const http = require('http');
-const { program } = require('commander');
-const fs = require('fs');  // стандартний fs для синхронних операцій
+const fs = require('fs');
 const path = require('path');
-// Налаштування параметрів командного рядка
-program
-  .requiredOption('-h, --host <host>', 'server address (host)')
-  .requiredOption('-p, --port <port>', 'server port')
-  .requiredOption('-c, --cache <cache>', 'path to cache directory');
 
-program.parse(process.argv);
+const cache = './cache';
 
-const { host, port, cache } = program.opts();
-
-// Перевірка, чи існує директорія для кешування
-if (!fs.existsSync(cache)) {
-  console.error(`Cache directory '${cache}' does not exist.`);
-  process.exit(1);
-}
-// Допоміжна функція для отримання шляху до файлу в кеші
 const getFilePath = (code) => path.join(cache, `${code}.jpg`);
 
-// Створення сервера
 const server = http.createServer(async (req, res) => {
-  const code = req.url.slice(1); // отримуємо код з URL
+  const code = req.url.slice(1); // отримуємо код зі шляху
 
-  if (req.method === 'GET') {
-    const filePath = getFilePath(code);  // шлях до файлу у кеші
+  if (req.method === 'PUT') {
+    const filePath = getFilePath(code);  // отримуємо шлях до файлу в кеші
+    const writeStream = fs.createWriteStream(filePath);
+
+    req.pipe(writeStream);
+
+    writeStream.on('finish', () => {
+      res.writeHead(201, { 'Content-Type': 'text/plain' });
+      res.end('File created');
+    });
+
+    writeStream.on('error', (err) => {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Internal Server Error');
+      console.error(err);
+    });
+
+  } else if (req.method === 'GET') {
+    const filePath = getFilePath(code);
 
     try {
-      const data = await fs.readFile(filePath);  // читаємо файл з кешу
+      const data = await fs.promises.readFile(filePath);
       res.writeHead(200, { 'Content-Type': 'image/jpeg' });
-      res.end(data);  // повертаємо файл як зображення
+      res.end(data);
     } catch (error) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('File not found');  // якщо файл не знайдено, повертаємо 404
+      res.end('File not found');
     }
   }
 });
 
-// Запуск сервера
-server.listen(port, host, () => {
-  console.log(`Server running at http://${host}:${port}/`);
+// Перевірка на існування кеш-директорії
+if (!fs.existsSync(cache)) {
+  fs.mkdirSync(cache, { recursive: true });
+}
+
+server.listen(3000, 'localhost', () => {
+  console.log('Server running at http://localhost:3000/');
 });
